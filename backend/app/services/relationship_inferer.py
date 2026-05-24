@@ -125,8 +125,10 @@ class RelationshipInferer:
                         continue
 
                     # Check if column name matches table or "id" pattern
+                    # Also handles plural table names: user_id → users, customer_id → customers
                     name_match = (
                         stripped == to_table.lower()
+                        or to_table.lower() in (stripped + "s", stripped + "es")
                         or fc == f"{to_table.lower()}_id"
                         or fc == f"{to_table.lower()}_key"
                     )

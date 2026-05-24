@@ -82,10 +82,37 @@ class ExecutiveSummary(BaseModel):
 # ---------------------------------------------------------------------------
 
 _QUALITY_SYSTEM_PROMPT = """You are a senior data quality analyst. You receive statistical profiles
-of database tables and columns — NOT raw data rows. Your job is to identify data quality issues.
+of database tables and columns — NOT raw data rows. Your job is to identify genuine data quality issues.
 
-Rules:
-1. Produce a JSON array of quality findings. Nothing else.
+## Severity rubric — use these thresholds strictly
+
+| Severity | Null rate | What qualifies |
+|---|---|---|
+| critical | null_pct >= 0.50 | Column is mostly empty; data is unusable. Duplicate PKs. All-null column. |
+| high | null_pct >= 0.20 | Significant data gaps. Clear type corruption. Outlier values breaking domain logic. |
+| medium | null_pct >= 0.05 | Moderate gaps on likely-required field. Inconsistent formats (mixed date styles). |
+| low | null_pct < 0.05 | Minor gaps on optional fields. Isolated anomalies. |
+
+## Do NOT flag as quality issues
+- pattern_flags "possible_enum" — low-cardinality categorical columns are EXPECTED and healthy.
+- pattern_flags "near_unique" — high-cardinality ID/key columns are EXPECTED and healthy.
+- pattern_flags "possible_boolean" — boolean-like columns are EXPECTED.
+- Missing indexes or constraints — those belong in Enrichment, not Quality.
+- Lack of declared types or FKs in file sources (has_declared_types: false is normal for CSV/XLSX).
+- A column being nullable when the schema doesn't enforce NOT NULL.
+- Low cardinality by itself — only flag if accompanied by evidence of data error.
+
+## When to raise each finding code
+- NULL_EXCESS / NULL_CRITICAL: only when null_pct meets the threshold above.
+- TYPE_MISMATCH: only when declared_type conflicts with inferred_type AND declared_type != "string".
+- MIXED_TYPES: only when top_values clearly show a mix of numeric and non-numeric in the same column.
+- INCONSISTENT_FORMAT: only when top_values (after PII scrubbing) show multiple incompatible formats.
+- POSSIBLE_DUPLICATE: only when near_unique is false AND evidence strongly suggests duplication.
+- ALL_NULL: only when null_pct = 1.0.
+- CARDINALITY_ANOMALY: only when cardinality is surprising given the column's apparent role (e.g., an ID column with very few distinct values).
+
+## Rules
+1. Produce a JSON array of quality findings. Nothing else. Return [] if no real issues exist.
 2. Each finding MUST cite specific statistics from the profile as evidence.
 3. fix_risk must be one of: "green" (safe, reversible), "yellow" (requires review), "red" (advisory only).
 4. For fix_risk "red": set sql_fix to null, provide only an investigation_query.
@@ -93,12 +120,9 @@ Rules:
 6. For fix_risk "yellow": provide SQL with an inline comment explaining the risk.
 7. All SQL must target exactly the table/column cited in the finding.
 8. Do NOT include raw data values in your output — only reference column names and statistics.
-9. Be precise and conservative. Only flag real issues backed by the statistics.
-10. Common finding codes: NULL_EXCESS, NULL_CRITICAL, TYPE_MISMATCH, CARDINALITY_ANOMALY,
-    POSSIBLE_DUPLICATE, ORPHANED_FK, INCONSISTENT_FORMAT, ALL_NULL, MIXED_TYPES, HIGH_CARDINALITY.
-11. Use the SQL dialect specified in source_info.sql_dialect (either "postgresql" or "duckdb").
-    DuckDB does NOT support: TO_CHAR, TO_DATE, SERIAL/SEQUENCE, pg_catalog, RETURNING, changes().
-    DuckDB DOES support: strftime, CAST, standard UPDATE/DELETE/ALTER TABLE.
+9. Use the SQL dialect specified in source_info.sql_dialect (either "postgresql" or "duckdb").
+   DuckDB does NOT support: TO_CHAR, TO_DATE, SERIAL/SEQUENCE, pg_catalog, RETURNING, changes().
+   DuckDB DOES support: strftime, CAST, standard UPDATE/DELETE/ALTER TABLE.
 
 Output format (JSON array):
 [
@@ -116,12 +140,24 @@ Output format (JSON array):
 ]"""
 
 _ENRICHMENT_SYSTEM_PROMPT = """You are a senior data engineer. You receive statistical profiles and
-inferred relationships between tables. Identify enrichment opportunities — missing indexes,
-derivable columns, normalization issues, and measures that users currently hand-roll in every query.
+inferred relationships between tables. Identify the most valuable enrichment opportunities — missing
+indexes, derivable columns, normalization issues, and measures that users hand-roll in every query.
 
-Rules:
+## Severity rubric for enrichment
+
+| Severity | Use when |
+|---|---|
+| critical | An enrichment whose ABSENCE is causing active data corruption or query failures. Rare. |
+| high | A missing index on a high-cardinality column that is clearly used for joins/filters. |
+| medium | Useful optimization or derived column that reduces repeated logic. Normalization gains. |
+| low | Nice-to-have. Partition hints. Redundant columns with low impact. |
+
+For file sources (has_declared_types: false, has_declared_fks: false), severity should be at most
+"medium" — file uploads are typically one-shot analyses, not production databases.
+
+## Rules
 1. Produce a JSON array of enrichment findings. Nothing else.
-2. Only suggest actionable enrichments with clear value.
+2. Be selective — only the top 5 most impactful opportunities. Do not pad with low-value items.
 3. fix_risk "red" means the change could break existing queries or requires DBA judgment.
 4. For "red" items: no sql_fix, only an investigation_query.
 5. Do NOT include raw data values. Reference only column names and table names.
@@ -136,7 +172,7 @@ Output format (JSON array):
   {
     "code": "MISSING_INDEX",
     "tables": ["orders"],
-    "severity": "high",
+    "severity": "medium",
     "fix_risk": "green",
     "description": "No index on orders.customer_id despite high cardinality and likely join target.",
     "sql_fix": "CREATE INDEX idx_orders_customer_id ON orders (customer_id);",
@@ -146,15 +182,30 @@ Output format (JSON array):
 
 _SYNTHESIS_SYSTEM_PROMPT = """You are a data quality expert writing an executive summary.
 You receive lists of quality and enrichment findings. Produce a JSON object (not an array)
-with: health_score (0-100, where 100 is perfect), a concise summary paragraph (2-3 sentences),
-and counts by severity level.
+with: health_score (0-100, where 100 is perfect data quality), a concise summary paragraph
+(2-3 sentences), and counts by severity level across ALL findings.
 
-health_score formula: start at 100, deduct:
-  - 15 per critical finding
-  - 8 per high finding
-  - 3 per medium finding
-  - 1 per low finding
-Minimum 0.
+## health_score measures DATA QUALITY only — not schema completeness or optimization.
+
+Step 1 — Quality deductions (apply to quality_findings only):
+  - critical: -15 per finding
+  - high:     -8 per finding
+  - medium:   -3 per finding
+  - low:      -1 per finding
+
+Step 2 — Enrichment adjustment (apply to enrichment_findings only):
+  - Deduct a flat 1 point per enrichment finding, regardless of severity.
+  - Cap total enrichment deduction at 5 points.
+
+Step 3 — Floor at 0.
+
+Example: 0 quality findings + 8 enrichment findings → 100 - 5 = 95.
+Example: 1 critical + 2 high quality findings + 5 enrichment → 100 - 15 - 16 - 5 = 64.
+
+The summary should describe the most important quality issues found (or confirm the data is clean),
+mention notable enrichment opportunities, and give practical next steps.
+
+severity counts in the output should reflect ALL findings (quality + enrichment) combined.
 
 Output: {"health_score": 72, "summary": "...", "critical_count": 0, "high_count": 3, "medium_count": 5, "low_count": 2}"""
 
@@ -350,23 +401,28 @@ class ClaudeAnalyzer:
     def _fallback_summary(
         quality: list[QualityFinding], enrichment: list[EnrichmentFinding]
     ) -> ExecutiveSummary:
-        all_findings = quality + enrichment  # type: ignore[operator]
         severity_counts = {"critical": 0, "high": 0, "medium": 0, "low": 0}
-        for f in all_findings:
+        for f in quality + enrichment:  # type: ignore[operator]
             sev = getattr(f, "severity", "low")
             severity_counts[sev] = severity_counts.get(sev, 0) + 1
 
+        # Quality findings carry full weight; enrichment capped at 5 points total
         score = 100
-        score -= severity_counts["critical"] * 15
-        score -= severity_counts["high"] * 8
-        score -= severity_counts["medium"] * 3
-        score -= severity_counts["low"] * 1
+        q_sev = {"critical": 0, "high": 0, "medium": 0, "low": 0}
+        for f in quality:
+            q_sev[f.severity] = q_sev.get(f.severity, 0) + 1
+        score -= q_sev["critical"] * 15
+        score -= q_sev["high"] * 8
+        score -= q_sev["medium"] * 3
+        score -= q_sev["low"] * 1
+        score -= min(len(enrichment), 5)
         score = max(0, score)
 
         total = sum(severity_counts.values())
         summary_text = (
-            f"Analysis identified {total} finding(s) across the dataset. "
-            f"Critical: {severity_counts['critical']}, High: {severity_counts['high']}. "
+            f"Analysis identified {len(quality)} quality issue(s) and "
+            f"{len(enrichment)} enrichment opportunity(ies). "
+            f"Critical quality issues: {q_sev['critical']}, High: {q_sev['high']}. "
             "Review the prioritized findings below and apply fixes using the runbook."
         )
         return ExecutiveSummary(
