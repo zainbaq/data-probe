@@ -6,7 +6,38 @@ import { createDBSource, uploadFileSource, createJob } from "@/lib/api";
 import type { SourceConnection } from "@/lib/types";
 
 type Step = "source-type" | "configure" | "confirm";
-type SourceType = "postgres" | "file";
+type DBSourceType = "postgres" | "mysql" | "mssql";
+type SourceType = DBSourceType | "file";
+
+const DB_OPTIONS: {
+  type: DBSourceType;
+  emoji: string;
+  label: string;
+  subtitle: string;
+  placeholder: string;
+}[] = [
+  {
+    type: "postgres",
+    emoji: "🐘",
+    label: "PostgreSQL",
+    subtitle: "Read-only connection via DSN",
+    placeholder: "postgresql://readonly_user:pass@host:5432/mydb",
+  },
+  {
+    type: "mysql",
+    emoji: "🐬",
+    label: "MySQL",
+    subtitle: "Read-only connection via DSN",
+    placeholder: "mysql://readonly_user:pass@host:3306/mydb",
+  },
+  {
+    type: "mssql",
+    emoji: "🪟",
+    label: "SQL Server",
+    subtitle: "Read-only connection via DSN",
+    placeholder: "mssql://readonly_user:pass@host:1433/mydb",
+  },
+];
 
 export default function NewAnalysisPage() {
   const router = useRouter();
@@ -25,6 +56,10 @@ export default function NewAnalysisPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  const isDbType = (t: SourceType): t is DBSourceType => t !== "file";
+
+  const currentDbOption = DB_OPTIONS.find((o) => o.type === sourceType);
+
   async function handleConfigure() {
     setError(null);
     setLoading(true);
@@ -33,8 +68,8 @@ export default function NewAnalysisPage() {
       if (!token) throw new Error("Not authenticated");
 
       let conn: SourceConnection;
-      if (sourceType === "postgres") {
-        conn = await createDBSource(token, dbName, dbDsn);
+      if (isDbType(sourceType)) {
+        conn = await createDBSource(token, dbName, dbDsn, sourceType);
       } else {
         if (!file) throw new Error("No file selected");
         conn = await uploadFileSource(token, file);
@@ -68,7 +103,7 @@ export default function NewAnalysisPage() {
     <div className="p-8 max-w-2xl mx-auto">
       <h1 className="text-2xl font-bold text-slate-900 mb-2">New Analysis</h1>
       <p className="text-slate-500 text-sm mb-8">
-        Connect a PostgreSQL database or upload a CSV / Excel file to analyze.
+        Connect a database or upload a CSV / Excel file to analyze.
       </p>
 
       {/* Step indicator */}
@@ -102,14 +137,17 @@ export default function NewAnalysisPage() {
         <div className="space-y-4">
           <h2 className="font-semibold text-slate-800">Choose your data source</h2>
           <div className="grid grid-cols-2 gap-4">
-            <button
-              onClick={() => { setSourceType("postgres"); setStep("configure"); }}
-              className="p-6 bg-white border-2 border-slate-200 rounded-xl hover:border-accent-400 hover:bg-accent-50 transition-all text-left"
-            >
-              <div className="text-3xl mb-3">🐘</div>
-              <div className="font-semibold text-slate-800">PostgreSQL Database</div>
-              <div className="text-sm text-slate-500 mt-1">Read-only connection via DSN</div>
-            </button>
+            {DB_OPTIONS.map((opt) => (
+              <button
+                key={opt.type}
+                onClick={() => { setSourceType(opt.type); setStep("configure"); }}
+                className="p-6 bg-white border-2 border-slate-200 rounded-xl hover:border-accent-400 hover:bg-accent-50 transition-all text-left"
+              >
+                <div className="text-3xl mb-3">{opt.emoji}</div>
+                <div className="font-semibold text-slate-800">{opt.label}</div>
+                <div className="text-sm text-slate-500 mt-1">{opt.subtitle}</div>
+              </button>
+            ))}
             <button
               onClick={() => { setSourceType("file"); setStep("configure"); }}
               className="p-6 bg-white border-2 border-slate-200 rounded-xl hover:border-accent-400 hover:bg-accent-50 transition-all text-left"
@@ -126,10 +164,12 @@ export default function NewAnalysisPage() {
       {step === "configure" && (
         <div className="space-y-6">
           <h2 className="font-semibold text-slate-800">
-            {sourceType === "postgres" ? "Connect PostgreSQL" : "Upload your file"}
+            {isDbType(sourceType)
+              ? `Connect ${currentDbOption?.label}`
+              : "Upload your file"}
           </h2>
 
-          {sourceType === "postgres" ? (
+          {isDbType(sourceType) ? (
             <div className="space-y-4">
               <div>
                 <label className="block text-sm font-medium text-slate-700 mb-1">Connection name</label>
@@ -147,12 +187,11 @@ export default function NewAnalysisPage() {
                   type="text"
                   value={dbDsn}
                   onChange={(e) => setDbDsn(e.target.value)}
-                  placeholder="postgresql://readonly_user:pass@host:5432/mydb"
+                  placeholder={currentDbOption?.placeholder}
                   className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-accent-400"
                 />
                 <p className="text-xs text-slate-400 mt-1">
-                  Use a read-only role.{" "}
-                  <a href="#" className="text-accent-500 underline">Setup guide →</a>
+                  Use a read-only role.
                 </p>
               </div>
             </div>
@@ -202,7 +241,7 @@ export default function NewAnalysisPage() {
             </button>
             <button
               onClick={handleConfigure}
-              disabled={loading || (sourceType === "postgres" ? (!dbName || !dbDsn) : !file)}
+              disabled={loading || (isDbType(sourceType) ? (!dbName || !dbDsn) : !file)}
               className="flex-1 bg-accent-500 hover:bg-accent-600 disabled:opacity-50 text-white font-semibold px-5 py-2.5 rounded-lg text-sm transition-colors"
             >
               {loading ? "Saving..." : "Continue →"}

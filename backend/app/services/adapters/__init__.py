@@ -1,5 +1,14 @@
 from app.services.adapters.base import SourceAdapter, SourceCapabilities
 from app.services.adapters.postgres import PostgresAdapter
+from app.services.adapters.mysql import MySQLAdapter
+from app.services.adapters.mssql import MSSQLAdapter
 from app.services.adapters.file import FileAdapter
 
-__all__ = ["SourceAdapter", "SourceCapabilities", "PostgresAdapter", "FileAdapter"]
+__all__ = [
+    "SourceAdapter",
+    "SourceCapabilities",
+    "PostgresAdapter",
+    "MySQLAdapter",
+    "MSSQLAdapter",
+    "FileAdapter",
+]

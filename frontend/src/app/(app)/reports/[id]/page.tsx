@@ -4,6 +4,7 @@ import { notFound } from "next/navigation";
 import { getReport, buildDownloadUrl } from "@/lib/api";
 import { ReportMarkdown } from "@/components/reports/ReportMarkdown";
 import { DownloadButton } from "@/components/reports/DownloadButton";
+import { DataProfileSection } from "@/components/reports/DataProfileSection";
 import { ChevronLeft } from "lucide-react";
 
 function HealthGauge({ score }: { score: number }) {
@@ -89,6 +90,9 @@ export default async function ReportPage({
       <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-8">
         <ReportMarkdown markdown={report.markdown} />
       </div>
+
+      {/* Data profile */}
+      <DataProfileSection profileJson={report.profile_json} />
     </div>
   );
 }

@@ -46,10 +46,10 @@ export default async function SourcesPage() {
               className="flex items-center gap-4 p-4 bg-white rounded-xl border border-slate-200 hover:border-slate-300 transition-colors"
             >
               <div className="w-10 h-10 rounded-lg bg-slate-100 flex items-center justify-center shrink-0">
-                {s.source_type === "postgres" ? (
-                  <Database size={18} className="text-slate-500" />
-                ) : (
+                {s.source_type === "csv" || s.source_type === "xlsx" ? (
                   <FileText size={18} className="text-slate-500" />
+                ) : (
+                  <Database size={18} className="text-slate-500" />
                 )}
               </div>
               <div className="flex-1 min-w-0">

@@ -30,6 +30,8 @@ from app.database import AsyncSessionLocal
 from app.logging import log_json
 from app.models import Job, JobStatus, Report, SourceConnection, SourceType
 from app.services.adapters.file import FileAdapter
+from app.services.adapters.mysql import MySQLAdapter
+from app.services.adapters.mssql import MSSQLAdapter
 from app.services.adapters.postgres import PostgresAdapter
 from app.services.cleaned_file_exporter import CleanedFileExporter
 from app.services.claude_analyzer import ClaudeAnalyzer
@@ -101,6 +103,14 @@ async def run_analysis(ctx: dict, job_id: str) -> None:
                 vault = get_vault()
                 dsn = vault.decrypt(source_conn.encrypted_credentials)
                 adapter = PostgresAdapter(dsn)
+            elif source_conn.source_type == SourceType.MYSQL:
+                vault = get_vault()
+                dsn = vault.decrypt(source_conn.encrypted_credentials)
+                adapter = MySQLAdapter(dsn)
+            elif source_conn.source_type == SourceType.MSSQL:
+                vault = get_vault()
+                dsn = vault.decrypt(source_conn.encrypted_credentials)
+                adapter = MSSQLAdapter(dsn)
             elif source_conn.source_type in (SourceType.CSV, SourceType.XLSX):
                 if not source_conn.file_path:
                     raise ValueError("File source missing file_path")
@@ -199,12 +209,18 @@ async def run_analysis(ctx: dict, job_id: str) -> None:
                 f.model_dump() for f in enrichment_findings
             ]
 
+            profile_json = {
+                table: [col.to_dict() for col in cols]
+                for table, cols in profiles.items()
+            }
+
             report = Report(
                 job_id=job_id,
                 health_score=summary.health_score,
                 executive_summary=summary.summary,
                 markdown=markdown,
                 findings_json=findings_json,
+                profile_json=profile_json,
             )
 
             # Cleaned file export for file sources

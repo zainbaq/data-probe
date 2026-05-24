@@ -55,19 +55,35 @@ async def create_db_source(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ) -> dict:
+    _TYPE_MAP = {
+        "postgres": SourceType.POSTGRES,
+        "mysql": SourceType.MYSQL,
+        "mssql": SourceType.MSSQL,
+    }
+    source_type_enum = _TYPE_MAP.get(payload.source_type)
+    if source_type_enum is None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=error_payload(
+                "INVALID_SOURCE_TYPE",
+                f"Unsupported source type '{payload.source_type}'. "
+                f"Allowed: {', '.join(_TYPE_MAP)}",
+            ),
+        )
+
     vault = get_vault()
     encrypted = vault.encrypt(payload.dsn)
 
     conn = SourceConnection(
         user_id=current_user.id,
         name=payload.name,
-        source_type=SourceType.POSTGRES,
+        source_type=source_type_enum,
         encrypted_credentials=encrypted,
     )
     db.add(conn)
     await db.commit()
     await db.refresh(conn)
-    log_json(logger, "source_created", source_id=conn.id, source_type="postgres")
+    log_json(logger, "source_created", source_id=conn.id, source_type=payload.source_type)
     return serialize_source(conn)
 
 

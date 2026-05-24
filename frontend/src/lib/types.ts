@@ -1,4 +1,4 @@
-export type SourceType = "postgres" | "csv" | "xlsx";
+export type SourceType = "postgres" | "mysql" | "mssql" | "csv" | "xlsx";
 
 export interface SourceConnection {
   id: string;
@@ -59,6 +59,29 @@ export interface Finding {
   } | null;
 }
 
+export interface TopValue {
+  value: string | number | boolean | null;
+  count: number;
+}
+
+export interface ColumnProfile {
+  table: string;
+  column: string;
+  declared_type: string | null;
+  inferred_type: string;
+  row_count: number;
+  null_count: number;
+  null_pct: number;
+  distinct_count: number;
+  cardinality_ratio: number;
+  min_val: string | number | null;
+  max_val: string | number | null;
+  mean_val: number | null;
+  std_val: number | null;
+  top_values: TopValue[];
+  pattern_flags: string[];
+}
+
 export interface Report {
   id: string;
   job_id: string;
@@ -66,6 +89,7 @@ export interface Report {
   executive_summary: string;
   markdown: string;
   findings_json: Finding[];
+  profile_json: Record<string, ColumnProfile[]>;
   has_cleaned_file: boolean;
   created_at: string;
 }

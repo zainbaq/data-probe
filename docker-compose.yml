@@ -59,6 +59,54 @@ services:
       redis:
         condition: service_healthy
 
+  mysql-test:
+    image: mysql:8.0
+    environment:
+      MYSQL_ROOT_PASSWORD: testpass
+      MYSQL_DATABASE: sampledb
+      MYSQL_USER: readonly
+      MYSQL_PASSWORD: readonly
+    volumes:
+      - ./test/seed/mysql:/docker-entrypoint-initdb.d
+      - mysql_test_data:/var/lib/mysql
+    ports:
+      - "3307:3306"
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "readonly", "-preadonly"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  mssql-test:
+    image: mcr.microsoft.com/mssql/server:2022-latest
+    environment:
+      ACCEPT_EULA: "Y"
+      MSSQL_SA_PASSWORD: "Test@1234!"
+    volumes:
+      - ./test/seed/mssql:/seed
+      - mssql_test_data:/var/opt/mssql
+    ports:
+      - "1433:1433"
+    healthcheck:
+      test: ["CMD-SHELL", "/opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P 'Test@1234!' -C -Q 'SELECT 1' > /dev/null 2>&1"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+
+  mssql-seed:
+    image: mcr.microsoft.com/mssql/server:2022-latest
+    depends_on:
+      mssql-test:
+        condition: service_healthy
+    volumes:
+      - ./test/seed/mssql:/seed
+    command: >
+      bash -c "
+        /opt/mssql-tools18/bin/sqlcmd -S mssql-test -U sa -P 'Test@1234!' -C -i /seed/init.sql &&
+        echo 'MSSQL seed complete'
+      "
+    restart: "no"
+
   frontend:
     build:
       context: ./frontend
@@ -80,3 +128,5 @@ volumes:
   pg_data:
   redis_data:
   uploads_data:
+  mysql_test_data:
+  mssql_test_data:

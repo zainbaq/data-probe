@@ -22,6 +22,8 @@ class Report(Base):
     markdown: Mapped[str] = mapped_column(Text, nullable=False, default="")
     # Structured findings list stored as JSON
     findings_json: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
+    # Per-table column profiles: {table: [ColumnProfile.to_dict(), ...]}
+    profile_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     # Path to cleaned file for file sources; None for DB sources
     cleaned_file_path: Mapped[str | None] = mapped_column(String, nullable=True)
     created_at: Mapped[datetime] = mapped_column(

@@ -21,6 +21,10 @@ anthropic==0.40.0
 duckdb==1.1.3
 openpyxl==3.1.5
 
+# Additional DB connectors
+aiomysql==0.2.0
+pymssql==2.3.1
+
 # SQL safety
 sqlglot==25.32.0
 

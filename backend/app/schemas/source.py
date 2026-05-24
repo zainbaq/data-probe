@@ -5,7 +5,8 @@ from app.models.source_connection import SourceType
 
 class DBSourceCreateRequest(BaseModel):
     name: str
-    dsn: str  # postgresql://user:pass@host:5432/db
+    dsn: str
+    source_type: str = "postgres"  # "postgres" | "mysql" | "mssql"
 
 
 class SourceResponse(BaseModel):

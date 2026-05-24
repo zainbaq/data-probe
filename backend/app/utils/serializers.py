@@ -40,6 +40,7 @@ def serialize_report(report: Report) -> dict:
         "executive_summary": report.executive_summary,
         "markdown": report.markdown,
         "findings_json": report.findings_json,
+        "profile_json": report.profile_json or {},
         "has_cleaned_file": report.cleaned_file_path is not None,
         "created_at": _iso(report.created_at),
     }

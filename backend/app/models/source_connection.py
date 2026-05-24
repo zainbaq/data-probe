@@ -10,6 +10,8 @@ from app.models.base import Base
 
 class SourceType(str, enum.Enum):
     POSTGRES = "postgres"
+    MYSQL = "mysql"
+    MSSQL = "mssql"
     CSV = "csv"
     XLSX = "xlsx"
 

@@ -40,11 +40,12 @@ export async function listSources(token: string): Promise<SourceConnection[]> {
 export async function createDBSource(
   token: string,
   name: string,
-  dsn: string
+  dsn: string,
+  source_type: string = "postgres"
 ): Promise<SourceConnection> {
   const res = await fetchWithAuth("/sources", token, {
     method: "POST",
-    body: JSON.stringify({ name, dsn }),
+    body: JSON.stringify({ name, dsn, source_type }),
   });
   return handleResponse<SourceConnection>(res);
 }
